@@ -1,36 +1,199 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# POC - Déploiement de Containers sur Azure
 
-## Getting Started
+Projet de démonstration d'une application Next.js déployée sur Azure Container Apps, capable de spawner dynamiquement des containers Azure Container Instances.
 
-First, run the development server:
+## 📋 Architecture
+
+Le projet est composé de deux parties principales :
+
+- **`my-app/`** : Application Next.js avec une API pour créer des containers à la demande
+- **`infra/`** : Infrastructure Terraform pour déployer l'application sur Azure
+
+### Stack Technique
+
+- **Frontend/Backend** : Next.js 15 avec App Router
+- **Infrastructure as Code** : Terraform
+- **Cloud Provider** : Microsoft Azure
+  - Azure Container Apps (pour l'application web)
+  - Azure Container Instances (pour les containers dynamiques)
+- **Authentification** : Azure Managed Identity
+- **Containerization** : Docker
+
+## 🚀 Démarrage Rapide
+
+### Prérequis
+
+- Node.js 20+
+- Docker
+- Azure CLI (`az login` configuré)
+- Terraform
+
+### Développement Local
+
+1. **Installer les dépendances**
+
+```bash
+cd my-app
+npm install
+```
+
+2. **Configurer les variables d'environnement**
+
+Créer un fichier `.env.local` dans `my-app/` :
+
+```env
+AZURE_SUBSCRIPTION_ID=votre-subscription-id
+AZURE_RESOURCE_GROUP=rg-poc-test
+```
+
+3. **Lancer le serveur de développement**
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+L'application sera accessible sur [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Build de l'image Docker
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cd my-app
+docker build -t poc-azure:latest .
+docker tag poc-azure:latest aqssel/poc-azure:v2
+docker push aqssel/poc-azure:v2
+```
 
-## Learn More
+## ☁️ Déploiement sur Azure
 
-To learn more about Next.js, take a look at the following resources:
+### 1. Déployer l'infrastructure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+cd infra
+terraform init
+terraform plan
+terraform apply
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Cela créera :
 
-## Deploy on Vercel
+- Un Resource Group `rg-poc-test`
+- Un environnement Container Apps
+- L'application web avec une identité managée
+- Les permissions nécessaires pour créer des containers
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 2. Récupérer l'URL de l'application
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+terraform output
+```
+
+ou via Azure CLI :
+
+```bash
+az containerapp show --name app-poc-spawner --resource-group rg-poc-test --query properties.configuration.ingress.fqdn
+```
+
+## 🔧 Fonctionnalités
+
+### API Endpoint : Spawn Container
+
+**POST** `/api/spawn`
+
+Crée un nouveau Azure Container Instance avec une image nginx de démonstration.
+
+**Réponse** :
+
+```json
+{
+  "success": true,
+  "message": "Container launching",
+  "data": { ... }
+}
+```
+
+Le container créé :
+
+- Nom aléatoire : `challenge-XXXX`
+- Image : `mcr.microsoft.com/azuredocs/aci-helloworld`
+- Accessible publiquement sur le port 80
+- Politique de redémarrage : `Never`
+
+## 🔐 Sécurité
+
+L'application utilise une **Managed Identity** Azure pour s'authentifier. Cela signifie :
+
+- ✅ Pas de secrets/credentials dans le code
+- ✅ Permissions gérées via Azure RBAC
+- ✅ Role `Contributor` sur le Resource Group uniquement
+
+## 📁 Structure du Projet
+
+```
+.
+├── my-app/                     # Application Next.js
+│   ├── src/
+│   │   └── app/
+│   │       ├── api/spawn/      # API pour créer des containers
+│   │       └── page.tsx        # Interface utilisateur
+│   ├── Dockerfile              # Image Docker de l'app
+│   └── package.json
+│
+└── infra/                      # Infrastructure Terraform
+    └── main.tf                 # Ressources Azure
+```
+
+## ⚠️ Important - Fichiers à ne PAS commiter
+
+Le `.gitignore` est configuré pour exclure :
+
+- `.terraform/` - Providers Terraform (très volumineux)
+- `*.tfstate` - État Terraform (peut contenir des secrets)
+- `node_modules/` - Dépendances Node.js
+- `.env.local` - Variables d'environnement locales
+
+## 🧹 Nettoyage
+
+Pour supprimer toutes les ressources Azure créées :
+
+```bash
+cd infra
+terraform destroy
+```
+
+## 🐛 Troubleshooting
+
+### Erreur "failed to push" avec Git
+
+Si vous avez cette erreur, c'est probablement que `.terraform/` a été commité. Solution :
+
+```bash
+git reset --soft HEAD~1
+git reset HEAD .
+git add .
+git commit -m "votre message"
+git push
+```
+
+### Erreur d'authentification Azure
+
+Vérifiez que vous êtes connecté :
+
+```bash
+az login
+az account show
+```
+
+### Container ne démarre pas
+
+Vérifiez les logs dans Azure Portal ou via CLI :
+
+```bash
+az container logs --resource-group rg-poc-test --name challenge-XXX
+```
+
+## 📚 Documentation Utile
+
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Azure Container Apps](https://learn.microsoft.com/azure/container-apps/)
+- [Azure Container Instances](https://learn.microsoft.com/azure/container-instances/)
+- [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
